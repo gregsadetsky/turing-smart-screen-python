@@ -20,11 +20,10 @@ import time
 from enum import Enum
 from typing import Optional
 
-from serial.tools.list_ports import comports
 import numpy as np
-
 from library.lcd.lcd_comm import *
 from library.log import logger
+from serial.tools.list_ports import comports
 
 
 class Command(IntEnum):
@@ -51,10 +50,16 @@ class SubRevision(Enum):
     USBMONITOR_5 = bytearray([0x02, 0x02, 0x02, 0x02, 0x02, 0x02])
     USBMONITOR_7 = bytearray([0x03, 0x03, 0x03, 0x03, 0x03, 0x03])
 
+
 # This class is for Turing Smart Screen (rev. A) 3.5" and UsbMonitor screens (all sizes)
 class LcdCommRevA(LcdComm):
-    def __init__(self, com_port: str = "AUTO", display_width: int = 320, display_height: int = 480,
-                 update_queue: Optional[queue.Queue] = None):
+    def __init__(
+        self,
+        com_port: str = "AUTO",
+        display_width: int = 320,
+        display_height: int = 480,
+        update_queue: Optional[queue.Queue] = None,
+    ):
         logger.debug("HW revision: A")
         LcdComm.__init__(self, com_port, display_width, display_height, update_queue)
         self.openSerial()
@@ -74,25 +79,31 @@ class LcdCommRevA(LcdComm):
 
         return auto_com_port
 
-    def SendCommand(self, cmd: Command, x: int, y: int, ex: int, ey: int, bypass_queue: bool = False):
+    def SendCommand(
+        self, cmd: Command, x: int, y: int, ex: int, ey: int, bypass_queue: bool = False
+    ):
         byteBuffer = bytearray(6)
-        byteBuffer[0] = (x >> 2)
-        byteBuffer[1] = (((x & 3) << 6) + (y >> 4))
-        byteBuffer[2] = (((y & 15) << 4) + (ex >> 6))
-        byteBuffer[3] = (((ex & 63) << 2) + (ey >> 8))
-        byteBuffer[4] = (ey & 255)
+        byteBuffer[0] = x >> 2
+        byteBuffer[1] = ((x & 3) << 6) + (y >> 4)
+        byteBuffer[2] = ((y & 15) << 4) + (ex >> 6)
+        byteBuffer[3] = ((ex & 63) << 2) + (ey >> 8)
+        byteBuffer[4] = ey & 255
         byteBuffer[5] = cmd
 
-        # If no queue for async requests, or if asked explicitly to do the request sequentially: do request now
-        if not self.update_queue or bypass_queue:
-            self.WriteData(byteBuffer)
-        else:
-            # Lock queue mutex then queue the request
-            with self.update_queue_mutex:
-                self.update_queue.put((self.WriteData, [byteBuffer]))
+        self.WriteData(byteBuffer)
+        time.sleep(0.0001)
 
     def _hello(self):
-        hello = bytearray([Command.HELLO, Command.HELLO, Command.HELLO, Command.HELLO, Command.HELLO, Command.HELLO])
+        hello = bytearray(
+            [
+                Command.HELLO,
+                Command.HELLO,
+                Command.HELLO,
+                Command.HELLO,
+                Command.HELLO,
+                Command.HELLO,
+            ]
+        )
 
         # This command reads LCD answer on serial link, so it bypasses the queue
         self.WriteData(hello)
@@ -131,7 +142,9 @@ class LcdCommRevA(LcdComm):
         self.openSerial()
 
     def Clear(self):
-        self.SetOrientation(Orientation.PORTRAIT)  # Bug: orientation needs to be PORTRAIT before clearing
+        self.SetOrientation(
+            Orientation.PORTRAIT
+        )  # Bug: orientation needs to be PORTRAIT before clearing
         self.SendCommand(Command.CLEAR, 0, 0, 0, 0)
         self.SetOrientation()  # Restore default orientation
 
@@ -142,7 +155,7 @@ class LcdCommRevA(LcdComm):
         self.SendCommand(Command.SCREEN_ON, 0, 0, 0, 0)
 
     def SetBrightness(self, level: int = 25):
-        assert 0 <= level <= 100, 'Brightness level must be [0-100]'
+        assert 0 <= level <= 100, "Brightness level must be [0-100]"
 
         # Display scales from 0 to 255, with 0 being the brightest and 255 being the darkest.
         # Convert our brightness % to an absolute value.
@@ -160,17 +173,17 @@ class LcdCommRevA(LcdComm):
         ex = 0
         ey = 0
         byteBuffer = bytearray(16)
-        byteBuffer[0] = (x >> 2)
-        byteBuffer[1] = (((x & 3) << 6) + (y >> 4))
-        byteBuffer[2] = (((y & 15) << 4) + (ex >> 6))
-        byteBuffer[3] = (((ex & 63) << 2) + (ey >> 8))
-        byteBuffer[4] = (ey & 255)
+        byteBuffer[0] = x >> 2
+        byteBuffer[1] = ((x & 3) << 6) + (y >> 4)
+        byteBuffer[2] = ((y & 15) << 4) + (ex >> 6)
+        byteBuffer[3] = ((ex & 63) << 2) + (ey >> 8)
+        byteBuffer[4] = ey & 255
         byteBuffer[5] = Command.SET_ORIENTATION
-        byteBuffer[6] = (orientation + 100)
-        byteBuffer[7] = (width >> 8)
-        byteBuffer[8] = (width & 255)
-        byteBuffer[9] = (height >> 8)
-        byteBuffer[10] = (height & 255)
+        byteBuffer[6] = orientation + 100
+        byteBuffer[7] = width >> 8
+        byteBuffer[8] = width & 255
+        byteBuffer[9] = height >> 8
+        byteBuffer[10] = height & 255
         self.serial_write(bytes(byteBuffer))
 
     @staticmethod
@@ -191,20 +204,21 @@ class LcdCommRevA(LcdComm):
         b = rgb[:, 2].astype(np.uint16)
 
         # construct RGB565
-        r = (r >> 3)
-        g = (g >> 2)
-        b = (b >> 3)
+        r = r >> 3
+        g = g >> 2
+        b = b >> 3
         rgb565 = (r << 11) | (g << 5) | b
 
         # serialize to little-endian
-        return rgb565.astype('<u2').tobytes()
+        return rgb565.astype("<u2").tobytes()
 
     def DisplayPILImage(
-            self,
-            image: Image.Image,
-            x: int = 0, y: int = 0,
-            image_width: int = 0,
-            image_height: int = 0
+        self,
+        image: Image.Image,
+        x: int = 0,
+        y: int = 0,
+        image_width: int = 0,
+        image_height: int = 0,
     ):
         width, height = self.get_width(), self.get_height()
 
@@ -214,10 +228,10 @@ class LcdCommRevA(LcdComm):
         if not image_width:
             image_width = image.size[0]
 
-        assert x <= width, 'Image X coordinate must be <= display width'
-        assert y <= height, 'Image Y coordinate must be <= display height'
-        assert image_height > 0, 'Image height must be > 0'
-        assert image_width > 0, 'Image width must be > 0'
+        assert x <= width, "Image X coordinate must be <= display width"
+        assert y <= height, "Image Y coordinate must be <= display height"
+        assert image_height > 0, "Image height must be > 0"
+        assert image_width > 0, "Image width must be > 0"
 
         # If our image size + the (x, y) position offsets are bigger than
         # our display, reduce the image size to fit our screen
@@ -236,16 +250,11 @@ class LcdCommRevA(LcdComm):
 
         self.SendCommand(Command.DISPLAY_BITMAP, x0, y0, x1, y1)
 
-        # Lock queue mutex then queue all the requests for the image data
         with self.update_queue_mutex:
-
-            # Send image data by multiple of "display width" bytes
             start = 0
-            end = width * 8
+            end = width * 2
             while end <= len(rgb565le):
                 self.SendLine(rgb565le[start:end])
-                start, end = end, end + width * 8
-
-            # Write last line if needed
+                start, end = end, end + width * 2
             if start != len(rgb565le):
                 self.SendLine(rgb565le[start:])
